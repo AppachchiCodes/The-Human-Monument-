@@ -25,9 +25,15 @@ export function createTileSprite(contribution, apiUrl) {
   // Content based on type
   switch (contribution.type) {
     case 'TEXT':
-      const text = new PIXI.Text(contribution.content, {
+      // Truncate long text to fit in tile
+      let displayText = contribution.content;
+      if (displayText.length > 200) {
+        displayText = displayText.substring(0, 200) + '...';
+      }
+      
+      const text = new PIXI.Text(displayText, {
         fontFamily: 'Inter',
-        fontSize: 14,
+        fontSize: 12,
         fill: 0xffffff,
         wordWrap: true,
         wordWrapWidth: TILE_SIZE - 20,
@@ -35,7 +41,13 @@ export function createTileSprite(contribution, apiUrl) {
       });
       text.x = 10;
       text.y = 10;
-      text.eventMode = 'none'; // Text doesn't need to be interactive
+      
+      // Ensure text doesn't exceed tile height
+      if (text.height > TILE_SIZE - 20) {
+        text.scale.y = (TILE_SIZE - 20) / text.height;
+      }
+      
+      text.eventMode = 'none';
       container.addChild(text);
       break;
 
