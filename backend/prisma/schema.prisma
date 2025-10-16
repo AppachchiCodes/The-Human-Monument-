@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Contribution {
+  id          String   @id @default(uuid())
+  shortId     String   @unique
+  x           Float
+  y           Float
+  type        ContributionType
+  content     String?  @db.Text
+  imagePath   String?
+  drawingPath String?
+  audioPath   String?
+  status      Status   @default(APPROVED)
+  ipAddress   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([x, y])
+  @@index([shortId])
+  @@index([createdAt])
+  @@map("contributions")
+}
+
+enum ContributionType {
+  TEXT
+  DRAWING
+  IMAGE
+  AUDIO
+}
+
+enum Status {
+  PENDING
+  APPROVED
+  FLAGGED
+  REJECTED
+}
