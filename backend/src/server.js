@@ -19,9 +19,20 @@ app.use(helmet({
   contentSecurityPolicy: false,
 }));
 
-// FIXED: Enhanced CORS configuration for media files
+// FIXED: Enhanced CORS configuration for multiple origins
+const allowedOrigins = config.corsOrigin.split(',').map(origin => origin.trim());
+
 app.use(cors({
-  origin: config.corsOrigin,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
@@ -37,11 +48,14 @@ app.use(morgan('combined', {
   stream: { write: (message) => logger.info(message.trim()) }
 }));
 
-// FIXED: Proxy R2 files
+// FIXED: Proxy R2 files with dynamic CORS
 app.use('/uploads', async (req, res, next) => {
   try {
-    // Set CORS headers
-    res.header('Access-Control-Allow-Origin', config.corsOrigin);
+    // Set CORS headers dynamically
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.indexOf(origin) !== -1) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
     res.header('Access-Control-Allow-Credentials', 'true');
     res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
     
@@ -100,7 +114,7 @@ app.use((req, res) => {
   });
 });
 
-// Error handling middleware 
+// Error handling middleware (must be last)
 app.use(errorHandler);
 
 // Graceful shutdown
