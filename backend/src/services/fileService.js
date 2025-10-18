@@ -1,85 +1,134 @@
-// src/services/fileService.js
-// File handling service (upload, compression, deletion)
-
-const fs = require('fs').promises;
-const path = require('path');
 const sharp = require('sharp');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { AppError } = require('../middleware/errorHandler');
 const config = require('../config');
-const logger = require('../utils/logger');
+const path = require('path');
+const crypto = require('crypto');
+
+// Initialize S3 Client for Cloudflare R2
+const s3Client = new S3Client({
+  region: 'auto',
+  endpoint: process.env.R2_ENDPOINT,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  },
+});
+
+const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'the-human-monument-files';
+const PUBLIC_URL = process.env.R2_PUBLIC_URL || process.env.R2_ENDPOINT;
 
 class FileService {
-  constructor() {
-    this.uploadPath = config.uploadPath;
+  generateFileName(prefix, extension) {
+    const timestamp = Date.now();
+    const random = crypto.randomBytes(4).toString('hex');
+    return `${prefix}_${timestamp}_${random}${extension}`;
   }
 
-  async ensureDirectoryExists(directory) {
+  async uploadToR2(buffer, key, contentType) {
     try {
-      await fs.access(directory);
-    } catch {
-      await fs.mkdir(directory, { recursive: true });
+      const command = new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      });
+
+      await s3Client.send(command);
+      
+      // Return the public URL path
+      return `/${key}`;
+    } catch (error) {
+      console.error('R2 upload error:', error);
+      throw new AppError('Failed to upload file to storage', 500);
     }
   }
 
   async saveImage(file) {
-    const timestamp = Date.now();
-    const filename = `image_${timestamp}.jpg`;
-    const filepath = path.join(this.uploadPath, 'images', filename);
+    try {
+      // Optimize image with sharp
+      const optimized = await sharp(file.buffer)
+        .resize(1200, 1200, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 85 })
+        .toBuffer();
 
-    await this.ensureDirectoryExists(path.join(this.uploadPath, 'images'));
+      const fileName = this.generateFileName('image', '.jpg');
+      const key = `images/${fileName}`;
 
-    // Compress and optimize image
-    await sharp(file.buffer)
-      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 85, progressive: true })
-      .toFile(filepath);
-
-    logger.info(`Image saved: ${filename}`);
-    return `/uploads/images/${filename}`;
+      return await this.uploadToR2(optimized, key, 'image/jpeg');
+    } catch (error) {
+      console.error('Image save error:', error);
+      throw new AppError('Failed to save image', 500);
+    }
   }
 
   async saveDrawing(dataUrl) {
-    const timestamp = Date.now();
-    const filename = `drawing_${timestamp}.png`;
-    const filepath = path.join(this.uploadPath, 'drawings', filename);
+    try {
+      // Extract base64 data
+      const matches = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+      if (!matches) {
+        throw new AppError('Invalid drawing data', 400);
+      }
 
-    await this.ensureDirectoryExists(path.join(this.uploadPath, 'drawings'));
+      const buffer = Buffer.from(matches[2], 'base64');
+      
+      // Optimize with sharp
+      const optimized = await sharp(buffer)
+        .resize(800, 800, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .png({ quality: 80 })
+        .toBuffer();
 
-    // Extract base64 data
-    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
+      const fileName = this.generateFileName('drawing', '.png');
+      const key = `drawings/${fileName}`;
 
-    // Optimize PNG
-    await sharp(buffer)
-      .png({ compressionLevel: 9 })
-      .toFile(filepath);
-
-    logger.info(`Drawing saved: ${filename}`);
-    return `/uploads/drawings/${filename}`;
+      return await this.uploadToR2(optimized, key, 'image/png');
+    } catch (error) {
+      console.error('Drawing save error:', error);
+      throw new AppError('Failed to save drawing', 500);
+    }
   }
 
   async saveAudio(file) {
-    const timestamp = Date.now();
-    const ext = path.extname(file.originalname);
-    const filename = `audio_${timestamp}${ext}`;
-    const filepath = path.join(this.uploadPath, 'audio', filename);
+    try {
+      if (file.size > config.maxAudioSize) {
+        throw new AppError('Audio file too large', 400);
+      }
 
-    await this.ensureDirectoryExists(path.join(this.uploadPath, 'audio'));
+      const ext = path.extname(file.originalname) || '.webm';
+      const fileName = this.generateFileName('audio', ext);
+      const key = `audio/${fileName}`;
 
-    await fs.writeFile(filepath, file.buffer);
+      const contentType = file.mimetype || 'audio/webm';
 
-    logger.info(`Audio saved: ${filename}`);
-    return `/uploads/audio/${filename}`;
+      return await this.uploadToR2(file.buffer, key, contentType);
+    } catch (error) {
+      console.error('Audio save error:', error);
+      throw new AppError('Failed to save audio', 500);
+    }
   }
 
   async deleteFile(filePath) {
-    if (!filePath) return;
-
     try {
-      const fullPath = path.join(__dirname, '../..', filePath);
-      await fs.unlink(fullPath);
-      logger.info(`File deleted: ${filePath}`);
+      if (!filePath) return;
+
+      // Remove leading slash if present
+      const key = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+
+      const command = new DeleteObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+      });
+
+      await s3Client.send(command);
     } catch (error) {
-      logger.error(`Failed to delete file: ${filePath}`, error);
+      console.error('Delete file error:', error);
+      // Don't throw error on delete failures
     }
   }
 }
