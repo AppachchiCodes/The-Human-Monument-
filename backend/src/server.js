@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const axios = require('axios');
+const path = require('path');
 const config = require('./config');
 const logger = require('./utils/logger');
 const errorHandler = require('./middleware/errorHandler');
@@ -13,26 +13,15 @@ const app = express();
 // Trust proxy for rate limiting behind reverse proxy
 app.set('trust proxy', 1);
 
-// FIXED: Configure Helmet to allow media files
+// Configure Helmet to allow media files
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   contentSecurityPolicy: false,
 }));
 
-// FIXED: Enhanced CORS configuration for multiple origins
-const allowedOrigins = config.corsOrigin.split(',').map(origin => origin.trim());
-
+// CORS configuration
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: config.corsOrigin,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
@@ -48,49 +37,12 @@ app.use(morgan('combined', {
   stream: { write: (message) => logger.info(message.trim()) }
 }));
 
-// FIXED: Proxy R2 files with dynamic CORS
-app.use('/uploads', async (req, res, next) => {
-  try {
-    // Set CORS headers dynamically
-    const origin = req.headers.origin;
-    if (origin && allowedOrigins.indexOf(origin) !== -1) {
-      res.header('Access-Control-Allow-Origin', origin);
-    }
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-    
-    // Handle preflight
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
-
-    // Construct R2 URL
-    const r2Endpoint = process.env.R2_PUBLIC_URL || process.env.R2_ENDPOINT;
-    const bucketName = process.env.R2_BUCKET_NAME;
-    const filePath = req.path.slice(1); // Remove leading slash
-    const r2Url = `${r2Endpoint}/${bucketName}${req.path}`;
-
-    // Fetch from R2 and pipe to response
-    const response = await axios({
-      method: 'GET',
-      url: r2Url,
-      responseType: 'stream',
-      headers: req.headers.range ? { Range: req.headers.range } : {},
-    });
-
-    // Copy headers
-    res.status(response.status);
-    Object.keys(response.headers).forEach(key => {
-      res.setHeader(key, response.headers[key]);
-    });
-
-    // Pipe the file
-    response.data.pipe(res);
-  } catch (error) {
-    console.error('R2 proxy error:', error.message);
-    res.status(404).json({ error: 'File not found' });
-  }
-});
+// Static file serving for uploads
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+  acceptRanges: true,
+  cacheControl: true,
+  maxAge: '1d',
+}));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -141,7 +93,7 @@ const server = app.listen(PORT, () => {
   logger.info(`🚀 Server running on port ${PORT}`);
   logger.info(`📝 Environment: ${config.nodeEnv}`);
   logger.info(`🌍 CORS enabled for: ${config.corsOrigin}`);
-  logger.info(`📂 R2 Storage configured`);
+  logger.info(`📂 Upload path: ${config.uploadPath}`);
 });
 
 module.exports = app;

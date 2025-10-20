@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -14,11 +14,11 @@ model Contribution {
   y           Float
   type        ContributionType
   content     String?  @db.Text
-  imagePath   String?
-  drawingPath String?
-  audioPath   String?
+  imagePath   String?  @db.VarChar(500)
+  drawingPath String?  @db.VarChar(500)
+  audioPath   String?  @db.VarChar(500)
   status      Status   @default(APPROVED)
-  ipAddress   String?
+  ipAddress   String?  @db.VarChar(45)
   metadata    Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

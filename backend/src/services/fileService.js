@@ -1,47 +1,41 @@
 const sharp = require('sharp');
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
-const { AppError } = require('../middleware/errorHandler');
-const config = require('../config');
+const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const { AppError } = require('../middleware/errorHandler');
+const config = require('../config');
 
-// Initialize S3 Client for Cloudflare R2
-const s3Client = new S3Client({
-  region: 'auto',
-  endpoint: process.env.R2_ENDPOINT,
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-  },
-});
-
-const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'the-human-monument-files';
-const PUBLIC_URL = process.env.R2_PUBLIC_URL || process.env.R2_ENDPOINT;
+// Hostinger absolute path
+const UPLOAD_BASE_PATH = process.env.NODE_ENV === 'production' 
+  ? '/home/u703422712/public_html/uploads'
+  : './uploads';
 
 class FileService {
+  constructor() {
+    this.ensureUploadDirectories();
+  }
+
+  async ensureUploadDirectories() {
+    const dirs = [
+      path.join(UPLOAD_BASE_PATH, 'images'),
+      path.join(UPLOAD_BASE_PATH, 'drawings'),
+      path.join(UPLOAD_BASE_PATH, 'audio')
+    ];
+
+    for (const dir of dirs) {
+      try {
+        await fs.mkdir(dir, { recursive: true });
+        console.log(`Directory ready: ${dir}`);
+      } catch (error) {
+        console.error(`Failed to create directory ${dir}:`, error);
+      }
+    }
+  }
+
   generateFileName(prefix, extension) {
     const timestamp = Date.now();
     const random = crypto.randomBytes(4).toString('hex');
     return `${prefix}_${timestamp}_${random}${extension}`;
-  }
-
-  async uploadToR2(buffer, key, contentType) {
-    try {
-      const command = new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: key,
-        Body: buffer,
-        ContentType: contentType,
-      });
-
-      await s3Client.send(command);
-      
-      // Return the public URL path
-      return `/${key}`;
-    } catch (error) {
-      console.error('R2 upload error:', error);
-      throw new AppError('Failed to upload file to storage', 500);
-    }
   }
 
   async saveImage(file) {
@@ -56,9 +50,12 @@ class FileService {
         .toBuffer();
 
       const fileName = this.generateFileName('image', '.jpg');
-      const key = `images/${fileName}`;
+      const filePath = path.join(UPLOAD_BASE_PATH, 'images', fileName);
 
-      return await this.uploadToR2(optimized, key, 'image/jpeg');
+      await fs.writeFile(filePath, optimized);
+
+      // Return web-accessible path
+      return `/uploads/images/${fileName}`;
     } catch (error) {
       console.error('Image save error:', error);
       throw new AppError('Failed to save image', 500);
@@ -85,9 +82,12 @@ class FileService {
         .toBuffer();
 
       const fileName = this.generateFileName('drawing', '.png');
-      const key = `drawings/${fileName}`;
+      const filePath = path.join(UPLOAD_BASE_PATH, 'drawings', fileName);
 
-      return await this.uploadToR2(optimized, key, 'image/png');
+      await fs.writeFile(filePath, optimized);
+
+      // Return web-accessible path
+      return `/uploads/drawings/${fileName}`;
     } catch (error) {
       console.error('Drawing save error:', error);
       throw new AppError('Failed to save drawing', 500);
@@ -102,11 +102,12 @@ class FileService {
 
       const ext = path.extname(file.originalname) || '.webm';
       const fileName = this.generateFileName('audio', ext);
-      const key = `audio/${fileName}`;
+      const filePath = path.join(UPLOAD_BASE_PATH, 'audio', fileName);
 
-      const contentType = file.mimetype || 'audio/webm';
+      await fs.writeFile(filePath, file.buffer);
 
-      return await this.uploadToR2(file.buffer, key, contentType);
+      // Return web-accessible path
+      return `/uploads/audio/${fileName}`;
     } catch (error) {
       console.error('Audio save error:', error);
       throw new AppError('Failed to save audio', 500);
@@ -117,15 +118,11 @@ class FileService {
     try {
       if (!filePath) return;
 
-      // Remove leading slash if present
-      const key = filePath.startsWith('/') ? filePath.slice(1) : filePath;
-
-      const command = new DeleteObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: key,
-      });
-
-      await s3Client.send(command);
+      // Convert web path to absolute path
+      const fullPath = path.join(UPLOAD_BASE_PATH, '..', filePath);
+      
+      await fs.unlink(fullPath);
+      console.log(` Deleted file: ${fullPath}`);
     } catch (error) {
       console.error('Delete file error:', error);
       // Don't throw error on delete failures

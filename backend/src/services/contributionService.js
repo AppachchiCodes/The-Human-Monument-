@@ -9,8 +9,10 @@ class ContributionService {
   calculateNextPosition(count) {
     if (count === 0) return { x: 0, y: 0 };
 
+    // FIXED: Match frontend exactly - 150 size + 10 padding = 160 total
     const TILE_SIZE = 150;
-    // NO PADDING in backend - padding is visual only in frontend
+    const TILE_PADDING = 10;
+    const TILE_TOTAL_SIZE = TILE_SIZE + TILE_PADDING; // 160
     
     let x = 0, y = 0;
     let dx = 0, dy = -1;
@@ -18,8 +20,8 @@ class ContributionService {
     let segmentPassed = 0;
 
     for (let i = 0; i < count; i++) {
-      x += dx * TILE_SIZE;
-      y += dy * TILE_SIZE;
+      x += dx * TILE_TOTAL_SIZE;  // Now using 160 like frontend
+      y += dy * TILE_TOTAL_SIZE;  // Now using 160 like frontend
       segmentPassed++;
 
       if (segmentPassed === segment) {
@@ -41,26 +43,13 @@ class ContributionService {
     const { type, content, drawing } = data;
     const shortId = generateContributionId();
 
-    // FIXED: Check for existing positions to avoid overlaps
-    // Get all existing contributions and find next available position
-    const existingContributions = await prisma.contribution.findMany({
-      select: { x: true, y: true },
+    // Get count of existing contributions to determine next position
+    const existingCount = await prisma.contribution.count({
       where: { status: 'APPROVED' }
     });
     
-    const existingPositions = new Set(
-      existingContributions.map(c => `${c.x},${c.y}`)
-    );
-    
-    // Find next available position
-    let position;
-    let positionIndex = 0;
-    do {
-      position = this.calculateNextPosition(positionIndex);
-      positionIndex++;
-    } while (existingPositions.has(`${position.x},${position.y}`));
-    
-    const { x, y } = position;
+    // Calculate position for this contribution
+    const { x, y } = this.calculateNextPosition(existingCount);
 
     // Prepare contribution data
     const contributionData = {
@@ -151,7 +140,7 @@ class ContributionService {
           audioPath: true,
           createdAt: true,
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'asc' }, // IMPORTANT: Order by creation time
         skip,
         take: limit,
       }),
@@ -189,6 +178,14 @@ class ContributionService {
     if (!contribution) {
       throw new AppError('Contribution not found', 404);
     }
+
+    // Ensure coordinates exist and are numbers
+    if (typeof contribution.x !== 'number' || typeof contribution.y !== 'number') {
+      logger.error(`Contribution ${shortId} has invalid coordinates: x=${contribution.x}, y=${contribution.y}`);
+      throw new AppError('Contribution has invalid position data', 500);
+    }
+
+    logger.info(`Found contribution ${shortId} at position (${contribution.x}, ${contribution.y})`);
 
     return contribution;
   }
