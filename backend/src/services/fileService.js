@@ -7,7 +7,7 @@ const config = require('../config');
 
 // Hostinger absolute path
 const UPLOAD_BASE_PATH = process.env.NODE_ENV === 'production' 
-  ? '/home/u703422712/public_html/uploads'
+  ? '/home/u703422712/domains/the-human-monument.space/public_html/uploads'
   : './uploads';
 
 class FileService {
