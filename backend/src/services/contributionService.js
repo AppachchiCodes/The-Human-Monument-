@@ -12,7 +12,7 @@ class ContributionService {
     // FIXED: Match frontend exactly - 150 size + 10 padding = 160 total
     const TILE_SIZE = 150;
     const TILE_PADDING = 10;
-    const TILE_TOTAL_SIZE = TILE_SIZE + TILE_PADDING; // 160
+    const TILE_TOTAL_SIZE = TILE_SIZE; // 150
     
     let x = 0, y = 0;
     let dx = 0, dy = -1;

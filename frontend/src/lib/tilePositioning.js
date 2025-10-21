@@ -1,6 +1,6 @@
 export const TILE_SIZE = 150;
 export const TILE_PADDING = 10;
-export const TILE_TOTAL_SIZE = TILE_SIZE + TILE_PADDING;
+export const TILE_TOTAL_SIZE = TILE_SIZE;
 
 /**
  * Calculate tile position using spiral algorithm (matches backend)

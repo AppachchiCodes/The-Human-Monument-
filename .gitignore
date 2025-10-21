@@ -8,6 +8,10 @@ yarn-error.log*
 .env
 .env.local
 .env.production
+.env.development
+
+# But allow example files (templates)
+!.env.example
 
 # Database
 *.db
@@ -15,6 +19,7 @@ yarn-error.log*
 
 # Uploads (local development - keep structure)
 backend/uploads/**/*
+uploads/**/*
 !backend/uploads/.gitkeep
 !backend/uploads/images/.gitkeep
 !backend/uploads/drawings/.gitkeep
@@ -36,17 +41,19 @@ build/
 .DS_Store
 Thumbs.db
 
-# Docker
+# Docker (not needed for Hostinger)
 docker-compose.override.yml
+docker-compose.yml
 
 # Logs
 logs/
 *.log
+backend/logs/
+pm2-*.log
 
 # Testing
 coverage/
 .nyc_output/
 
-# Prisma
-backend/prisma/migrations/
-!backend/prisma/migrations/.gitkeep
+# Prisma - Keep migrations! Only ignore dev db file
+*.db
