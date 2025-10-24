@@ -40,13 +40,15 @@ export default function InfiniteWall({ onBack, targetTile, onTargetReached }) {
       
       try {
         const app = new PIXI.Application({
-          view: canvas,
-          width: window.innerWidth,
-          height: window.innerHeight,
-          backgroundColor: 0x050505,
-          antialias: false,
-          resolution: 1,
-        });
+        view: canvas,
+        width: window.innerWidth,
+        height: window.innerHeight,
+        backgroundColor: 0x050505,
+        antialias: false,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        powerPreference: 'high-performance',
+        failIfMajorPerformanceCaveat: false,
+      });
 
         const viewport = new Viewport({
           screenWidth: window.innerWidth,
